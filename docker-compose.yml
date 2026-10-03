@@ -1,0 +1,44 @@
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
+
+  app-1:
+    build: .
+    environment:
+      PORT: 3001
+      INSTANCE_ID: app-1
+      REDIS_URL: redis://redis:6379
+    ports:
+      - "3001:3001"
+    depends_on:
+      - redis
+
+  app-2:
+    build: .
+    environment:
+      PORT: 3002
+      INSTANCE_ID: app-2
+      REDIS_URL: redis://redis:6379
+    ports:
+      - "3002:3002"
+    depends_on:
+      - redis
+
+  app-3:
+    build: .
+    environment:
+      PORT: 3003
+      INSTANCE_ID: app-3
+      REDIS_URL: redis://redis:6379
+    ports:
+      - "3003:3003"
+    depends_on:
+      - redis
+
+volumes:
+  redis-data:
