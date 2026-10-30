@@ -32,6 +32,7 @@ The system solves this problem by storing rate-limit state in a shared Redis ser
 | Frontend | HTML5, CSS3, vanilla JavaScript |
 | Charts | Chart.js |
 | Backend | Node.js and Express |
+| Protocol services | HTTP/REST, Socket.IO, gRPC, TCP, UDP |
 | Shared state | Redis 7 |
 | Redis client | ioredis |
 | Real-time updates | Socket.IO |
@@ -227,7 +228,11 @@ Allows configuration of total requests, requests per second, virtual clients, an
 
 ### Request Builder
 
-Allows manual configuration of client metadata, identity type, API key, user ID, tenant ID, HTTP method, endpoint, and custom headers. It displays the actual target instance and rate-limit decision.
+Allows manual configuration of client metadata, identity type, API key, user ID, tenant ID, protocol, HTTP method, and endpoint. It displays the actual target instance, protocol, and rate-limit decision.
+
+The builder can send a request over HTTP/REST or Socket.IO directly. For gRPC, TCP, and UDP, the browser sends the test input to a local adapter, which forwards it over the selected native protocol to a protocol listener. Each listener invokes the same rate limiter and shared Redis state. TCP uses newline-delimited JSON, UDP uses one JSON datagram per request, and gRPC uses the service in `proto/rate_limiter.proto`. The three Docker instances publish these listeners on ports 4001–4003 (TCP), 5001–5003 (UDP), and 6001–6003 (gRPC).
+
+These protocol listeners are intended for local demonstrations. The gRPC service uses insecure credentials, and the TCP/UDP test framing has no authentication or encryption; do not expose these ports to untrusted networks.
 
 ### Rate Policy
 

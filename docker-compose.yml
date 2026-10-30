@@ -11,10 +11,16 @@ services:
     build: .
     environment:
       PORT: 3001
+      TCP_PORT: 4001
+      UDP_PORT: 5001
+      GRPC_PORT: 6001
       INSTANCE_ID: app-1
       REDIS_URL: redis://redis:6379
     ports:
       - "3001:3001"
+      - "4001:4001/tcp"
+      - "5001:5001/udp"
+      - "6001:6001/tcp"
     depends_on:
       - redis
 
@@ -22,10 +28,16 @@ services:
     build: .
     environment:
       PORT: 3002
+      TCP_PORT: 4002
+      UDP_PORT: 5002
+      GRPC_PORT: 6002
       INSTANCE_ID: app-2
       REDIS_URL: redis://redis:6379
     ports:
       - "3002:3002"
+      - "4002:4002/tcp"
+      - "5002:5002/udp"
+      - "6002:6002/tcp"
     depends_on:
       - redis
 
@@ -33,10 +45,16 @@ services:
     build: .
     environment:
       PORT: 3003
+      TCP_PORT: 4003
+      UDP_PORT: 5003
+      GRPC_PORT: 6003
       INSTANCE_ID: app-3
       REDIS_URL: redis://redis:6379
     ports:
       - "3003:3003"
+      - "4003:4003/tcp"
+      - "5003:5003/udp"
+      - "6003:6003/tcp"
     depends_on:
       - redis
 

@@ -7,6 +7,7 @@ const { v4: uuid } = require('uuid');
 const { createRedis } = require('./src/redis');
 const { rateLimit } = require('./src/rateLimiter');
 const { Metrics } = require('./src/metrics');
+const { startProtocolServers, requestOverProtocol } = require('./src/protocols');
 
 const app = express();
 const server = http.createServer(app);
@@ -15,6 +16,11 @@ const redis = createRedis();
 const metrics = new Metrics();
 const instanceId = process.env.INSTANCE_ID || 'dashboard-gateway';
 const port = Number(process.env.PORT || 3000);
+const protocolPorts = {
+  tcp: Number(process.env.TCP_PORT || 4000 + (port - 3000)),
+  udp: Number(process.env.UDP_PORT || 5000 + (port - 3000)),
+  grpc: Number(process.env.GRPC_PORT || 6000 + (port - 3000))
+};
 
 const policies = new Map([['global', {
   id: 'global', name: 'Global API policy', algorithm: 'fixed-window', limit: 100,
@@ -64,6 +70,7 @@ async function processRequest(input = {}) {
     endpoint: input.endpoint || '/api/demo', method: input.method || 'GET', algorithm: policy.algorithm,
     allowed: decision.allowed, decision: decision.delayedMs ? (decision.allowed ? 'DELAYED + ALLOWED' : 'DELAYED + REJECTED') : (decision.allowed ? 'ALLOWED' : 'REJECTED'), status: decision.status,
     latency, delayedMs: decision.delayedMs, remaining: decision.remaining, retryAfter: decision.retryAfter,
+    protocol: ({ websocket: 'WebSocket', grpc: 'gRPC', tcp: 'TCP', udp: 'UDP' })[input.protocol] || 'HTTP/REST',
     reason: decision.delayedMs ? `Waited ${decision.delayedMs} ms before retrying` : (decision.allowed ? 'Quota available' : 'Rate limit exhausted'),
     policyId: policy.id
   };
@@ -107,12 +114,18 @@ app.get('/api/requests', (req, res) => {
   res.json(result.slice(0, 100));
 });
 app.post('/api/traffic/single', async (req, res) => {
-  try { res.status(200).json(await processRequest(req.body)); } catch (error) { res.status(503).json({ error: error.message }); }
+  try { res.status(200).json(await processRequest({ ...req.body, protocol: 'http' })); } catch (error) { res.status(503).json({ error: error.message }); }
+});
+app.post('/api/protocols/:protocol', async (req, res) => {
+  try {
+    const result = await requestOverProtocol(req.params.protocol, req.body, protocolPorts);
+    res.json(result);
+  } catch (error) { res.status(502).json({ error: error.message }); }
 });
 app.post('/api/traffic/batch', async (req, res) => {
   try {
     const count = Math.min(1000, Math.max(1, Number(req.body.count) || 1));
-    const results = []; for (let i = 0; i < count; i += 1) results.push(await processRequest(req.body));
+    const results = []; for (let i = 0; i < count; i += 1) results.push(await processRequest({ ...req.body, protocol: 'http' }));
     res.json({ results, metrics: metrics.snapshot() });
   } catch (error) { res.status(503).json({ error: error.message }); }
 });
@@ -139,8 +152,18 @@ app.get('/api/experiments/:id/report', (req, res) => {
 });
 app.post('/api/experiments', (req, res) => res.status(201).json({ id: `EXP-${Date.now()}`, ...metrics.snapshot(), measured: true }));
 
-io.on('connection', (socket) => { socket.emit('metrics:update', { metrics: metrics.snapshot(), instances: [...instances.values()], policy: policies.get('global'), recent: requestLog.slice(0, 12) }); });
+io.on('connection', (socket) => {
+  socket.emit('metrics:update', { metrics: metrics.snapshot(), instances: [...instances.values()], policy: policies.get('global'), recent: requestLog.slice(0, 12) });
+  socket.on('request:submit', async (input, acknowledge) => {
+    try { const result = await processRequest({ ...input, protocol: 'websocket' }); if (typeof acknowledge === 'function') acknowledge({ ok: true, result }); }
+    catch (error) { if (typeof acknowledge === 'function') acknowledge({ ok: false, error: error.message }); }
+  });
+});
 
-async function start() { await redis.connect(); server.listen(port, () => console.log(`Distributed limiter listening on http://localhost:${port} (${instanceId})`)); }
+async function start() {
+  await redis.connect();
+  await startProtocolServers({ processRequest, tcpPort: protocolPorts.tcp, udpPort: protocolPorts.udp, grpcPort: protocolPorts.grpc });
+  server.listen(port, () => console.log(`Distributed limiter listening on http://localhost:${port} (${instanceId})`));
+}
 if (require.main === module) start().catch((error) => { console.error(error); process.exit(1); });
 module.exports = { app, processRequest, policies, instances };
